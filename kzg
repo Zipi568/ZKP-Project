@@ -1,0 +1,19 @@
+import random
+from py_ecc.bn128 import G1, multiply
+
+# 1. Tajni parametar τ (obično generiše trusted party)
+tau = random.randint(1, 2**256 - 1)  # Nasumično biran skalar
+
+# 2. Generisanje Powers of Tau (potrebno za komitment)
+def setup(degree, G, tau):
+    """
+    Generiše javne parametre do stepena 'degree' za polinomialni komitment.
+    """
+    return [multiply(G, pow(tau, i)) for i in range(degree + 1)]
+
+# Postavljanje javnih parametara za polinom stepena 3
+trusted_setup = setup(3, G1, tau)
+
+# Ispis rezultata setup faze
+for i, param in enumerate(trusted_setup):
+    print(f"tau^{i} * G: {param}")
