@@ -99,7 +99,7 @@ def verify_polynom(PK, C, coeffs):
     return C == C_prime
 
 def verify_eval(C, i, phi_i, w_i, g, g_alpha):
-    lhs = pairing(C, C)  # e(C, g)
+    lhs = pairing(C, g)  # e(C, g)
     rhs = pairing(w_i, add(g_alpha, neg(multiply(G1, i)))) * pairing(g, g) ** phi_i  # e(w_i, g^alpha / g^i) * e(g, g)^phi(i)
     return lhs == rhs
 
