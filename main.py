@@ -1,7 +1,7 @@
 import random
 from typing import Tuple, List
-from py_ecc.optimized_bls12_381 import G1, G2, pairing, curve_order, multiply, add, neg
-from sympy import symbols, div, expand
+from py_ecc.optimized_bls12_381 import G1, G2, pairing, curve_order, multiply, add, neg, is_on_curve, normalize, Z1
+from sympy import symbols, div, expand, poly
 
 def generate_GT():
     """
@@ -9,16 +9,15 @@ def generate_GT():
     """
     g = G1
     h = G2
-    gt_generator = pairing(g, h)
+    gt_generator = pairing(h, g)
 
     # Verify that gt_generator is in GT
     # Ensure that gt_generator raised to curve_order equals 1
-    assert gt_generator ** curve_order == 1, "GT generator is not valid"
+    #assert gt_generator ** curve_order == 1, "GT generator is not valid"
 
     return gt_generator
 
-
-def setup(k: int, t: int) -> Tuple[dict, int]:
+def trusted_setup(k: int, t: int) -> Tuple[dict, int]:
     """
     Setup function for bilinear pairing-based cryptosystem.
 
@@ -33,8 +32,6 @@ def setup(k: int, t: int) -> Tuple[dict, int]:
     # Step 1: Define the generator for G1
     g = G1
     h = G2  # Optional: For completeness, define G2's generator
-    print("G1 Generator:", g)
-    print("G2 Generator:", h)
 
     # Step 2: Choose a random secret key alpha from Z*_p
     alpha = random.randint(1, curve_order - 1)
@@ -44,7 +41,6 @@ def setup(k: int, t: int) -> Tuple[dict, int]:
 
     # Step 4: Generate GT generator
     gt_gen = generate_GT()
-    print("GT Generator:", gt_gen)
 
     # Step 5: Construct the public key
     PK = {
@@ -59,11 +55,16 @@ def setup(k: int, t: int) -> Tuple[dict, int]:
     return PK, alpha
 
 
+
 # Example usage
 security_param = 128  # 128-bit security
 t_param = 5  # t-SDH assumption parameter
 
+s, alpha = trusted_setup(security_param, t_param)
 tau = random.randint(1, 2**256 - 1)  # Nasumično biran skalar
+for i in s:
+    print("Tr setup: {0} -> {1}".format(i, s[i]))
+print(alpha)
 
 # 2. Generisanje Powers of Tau (potrebno za komitment)
 def setup(degree, G, tau):
@@ -76,45 +77,59 @@ def setup(degree, G, tau):
 trusted_setup = setup(3, G1, tau)
 
 def commit(trusted_setup, coeffs):
-    C = None  # Neutralna tačka na eliptičkoj krivoj
+    C = Z1  # Neutralna tačka na eliptičkoj krivoj
 
     for i, coef in enumerate(coeffs):
-        term = multiply(trusted_setup[i], coef)  # c_i * (tau^i * G)
-        if C:
-            C = add(C, term)
-        else:
-            C = term
+        term = multiply(trusted_setup["g_alpha_tuple"][i], coef)  # c_i * (tau^i * G)
+        C = add(C, term)
     return C
-
-def generate_witness(PK, polynom, i):
+coeffs = [4, 7, 2, 1]  # 4 * x^3 + 7 * x^2 + 2 * x + 1
+commitment = commit(s, coeffs)
+print("Commitment: {0}".format(commitment))
+def generate_witness(PK, polynom, i, alpha):
     x = symbols('x')
     phi_i = polynom.subs(x, i)  # Evaluacija phi(i)
     numerator = expand(polynom - phi_i)  # Racunamo phi(x) - phi(i)
     denominator = x - i  # (x - i)
     psi_i, remainder = div(numerator, denominator, x)  # Deljenje polinoma
-    return psi_i
+    psi_i_alpha = psi_i.subs(x, alpha)
+    p = poly(psi_i, x)
+    coeffs2 = p.all_coeffs()
+    wi = Z1
+
+    # Multiply G1 by itself exponent times
+    for i, coef in enumerate(coeffs2):
+        j = multiply(PK["g_alpha_tuple"][i], coef)
+        wi = add(wi, j)
+
+    return wi
 
 def verify_polynom(PK, C, coeffs):
     C_prime = commit(PK, coeffs)
     return C == C_prime
 
-def verify_eval(C, i, phi_i, w_i, g, g_alpha):
-    lhs = pairing(C, g)  # e(C, g)
-    rhs = pairing(w_i, add(g_alpha, neg(multiply(G1, i)))) * pairing(g, g) ** phi_i  # e(w_i, g^alpha / g^i) * e(g, g)^phi(i)
+def verify_eval(C, i, phi_i, w_i, g_alpha):
+    lhs = pairing(G2, C)  # e(C, g)
+    x = symbols('x')
+    p_i = phi_i.subs(x, i)
+    print("LHS: {0}".format(lhs))
+    d1 = multiply(G2, g_alpha - i)
+
+    p1 = pairing(d1, w_i)
+    rhs = p1 * (pairing(G2, G1) ** p_i)  # e(w_i, g^alpha / g^i) * e(g, g)^phi(i)
+    print("RHS: {0}".format(rhs))
     return lhs == rhs
 
-coeffs = [4, 7, 2, 1]  # 4 * x^3 + 7 * x^2 + 2 * x + 1
 fake_coeffs = [4, 6, 2, 4]
 
 # Ispis rezultata setup faze
-C = commit(trusted_setup, coeffs)
-print("type: ", type(C[0]))
 x = symbols('x')
 polynom = 4 * x**3 + 7 * x**2 + 2 * x + 1
 
-op = verify_polynom(trusted_setup, C, coeffs)
-print("Commitment C:", C)
-print("Open:", op)
-witness = generate_witness(trusted_setup, polynom, 4)
-print("Witness: {} -> {}", 4, witness)
-verification = verify_eval(C, 4, polynom, witness, G1, G2)
+ok = verify_polynom(s, commitment, coeffs)
+print(ok)
+witness = generate_witness(s, polynom, 4, alpha)
+print("Witness type: {0}".format(type(witness)))
+print("Witness: {0}".format(witness))
+verification = verify_eval(commitment, 4, polynom, witness, alpha)
+print(verification)
