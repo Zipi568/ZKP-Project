@@ -1,6 +1,6 @@
 import random
 from typing import Tuple, List
-from py_ecc.optimized_bls12_381 import G1, G2, pairing, curve_order, multiply, add, neg, is_on_curve, normalize, Z1
+from py_ecc.optimized_bls12_381 import G1, G2, pairing, curve_order, multiply, add, neg, is_on_curve, normalize, Z1, b
 from sympy import symbols, div, expand, poly
 
 def generate_GT():
@@ -56,26 +56,6 @@ def trusted_setup(k: int, t: int) -> Tuple[dict, int]:
 
 
 
-# Example usage
-security_param = 128  # 128-bit security
-t_param = 5  # t-SDH assumption parameter
-
-s, alpha = trusted_setup(security_param, t_param)
-tau = random.randint(1, 2**256 - 1)  # Nasumično biran skalar
-for i in s:
-    print("Tr setup: {0} -> {1}".format(i, s[i]))
-print(alpha)
-
-# 2. Generisanje Powers of Tau (potrebno za komitment)
-def setup(degree, G, tau):
-    """
-    Generiše javne parametre do stepena 'degree' za polinomialni komitment.
-    """
-    return [multiply(G, pow(tau, i)) for i in range(degree + 1)]
-
-# Postavljanje javnih parametara za polinom stepena 3
-trusted_setup = setup(3, G1, tau)
-
 def commit(trusted_setup, coeffs):
     C = Z1  # Neutralna tačka na eliptičkoj krivoj
 
@@ -83,24 +63,17 @@ def commit(trusted_setup, coeffs):
         term = multiply(trusted_setup["g_alpha_tuple"][i], coef)  # c_i * (tau^i * G)
         C = add(C, term)
     return C
-coeffs = [4, 7, 2, 1]  # 4 * x^3 + 7 * x^2 + 2 * x + 1
-commitment = commit(s, coeffs)
-print("Commitment: {0}".format(commitment))
 def generate_witness(PK, polynom, i, alpha):
     x = symbols('x')
     phi_i = polynom.subs(x, i)  # Evaluacija phi(i)
     numerator = expand(polynom - phi_i)  # Racunamo phi(x) - phi(i)
     denominator = x - i  # (x - i)
     psi_i, remainder = div(numerator, denominator, x)  # Deljenje polinoma
-    psi_i_alpha = psi_i.subs(x, alpha)
-    p = poly(psi_i, x)
-    coeffs2 = p.all_coeffs()
-    wi = Z1
 
-    # Multiply G1 by itself exponent times
-    for i, coef in enumerate(coeffs2):
-        j = multiply(PK["g_alpha_tuple"][i], coef)
-        wi = add(wi, j)
+    assert remainder == 0
+
+    eval_alpha = psi_i.subs(x, alpha)
+    wi = multiply(G1, eval_alpha)
 
     return wi
 
@@ -108,7 +81,7 @@ def verify_polynom(PK, C, coeffs):
     C_prime = commit(PK, coeffs)
     return C == C_prime
 
-def verify_eval(C, i, phi_i, w_i, g_alpha):
+def verify_eval(PK, C, i, phi_i, w_i, g_alpha):
     lhs = pairing(G2, C)  # e(C, g)
     x = symbols('x')
     p_i = phi_i.subs(x, i)
@@ -120,6 +93,25 @@ def verify_eval(C, i, phi_i, w_i, g_alpha):
     print("RHS: {0}".format(rhs))
     return lhs == rhs
 
+
+
+
+# Example usage
+security_param = 128  # 128-bit security
+t_param = 5  # t-SDH assumption parameter
+
+s, alpha = trusted_setup(security_param, t_param)
+
+for i in s:
+    print("Tr setup: {0} -> {1}".format(i, s[i]))
+print(alpha)
+
+coeffs = [4, 7, 2, 1]  # 4 * x^3 + 7 * x^2 + 2 * x + 1
+commitment = commit(s, coeffs)
+print("Commitment: {0}".format(commitment))
+
+
+
 fake_coeffs = [4, 6, 2, 4]
 
 # Ispis rezultata setup faze
@@ -129,7 +121,11 @@ polynom = 4 * x**3 + 7 * x**2 + 2 * x + 1
 ok = verify_polynom(s, commitment, coeffs)
 print(ok)
 witness = generate_witness(s, polynom, 4, alpha)
+
+pripada = is_on_curve(witness, b)
+print("Pripada commit: {}".format(pripada))
+
 print("Witness type: {0}".format(type(witness)))
 print("Witness: {0}".format(witness))
-verification = verify_eval(commitment, 4, polynom, witness, alpha)
+verification = verify_eval(s, commitment, 4, polynom, witness, alpha)
 print(verification)
