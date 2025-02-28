@@ -2,16 +2,14 @@
 KZG polynomial commitment
 
 
-Generate gt funkcija za generisanje Gt grupe koja se dobije bilinearnim uparivanjem vec postojece grupe.
+setup - generates trusted setup with k-bit security
 
-Setup je funkcija za generisanje trusted setup sa bilinearnim uparivanjem //to ne radi jer koristi bilinearno uparivanje koje nije implementirano
+commit - Commits the polynomial
 
-Setup druga uzima kvec podesene parametre i pravi trusted setup tj. public key
+open - Opens polyinomial
 
-Commit commituje public key
+verify_polynom - Verifies if commited and used polynomial are the same
 
-Generate witness generise svedoka pri proveravanju
+generate_witness - generates witness in given point i
 
-Verify polinom proverava da li je commit zapraavo commit polinoma
-
-Verify eval to jos ne radi
+verify_eval - verifies if witness is actually evaluation in given point
